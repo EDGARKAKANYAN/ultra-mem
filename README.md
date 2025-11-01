@@ -1,3 +1,5 @@
+<img src="./fig4.png" width="400px"></img>
+
 ## UltraMem (wip)
 
 Implementation of [UltraMem](https://arxiv.org/abs/2411.12364v1), improved Product Key Memory design, from Bytedance AI labs
