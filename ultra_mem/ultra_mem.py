@@ -26,6 +26,9 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
+def divisible_by(num, den):
+    return (num % den) == 0
+
 # classes
 
 class UltraMem(Module):
@@ -33,8 +36,8 @@ class UltraMem(Module):
     def __init__(
         self,
         dim,
-        dim_values,
         dim_out,
+        dim_values = None,
         num_memories = 1_000_000,
         topk = 32,
         dim_queries_keys = 128,         # think this is what PKM uses
@@ -42,14 +45,23 @@ class UltraMem(Module):
         core_heads = 2,                 # number of cores / heads
         core_aux_loss_margin = 0.15,
         aux_loss_weight = 0.1,
+        value_expansion = 4,
         pre_query_causal_conv = True,
         qk_layernorm = True,
         prenorm = True,
-        proj_out = None
+        proj_out = None,
+        mem_init_value = 1e-2
     ):
         super().__init__()
+
+        # variables
+
         assert sqrt(num_memories).is_integer()
         num_keys = int(sqrt(num_memories))
+
+        dim_values = default(dim_values, dim // core_heads)
+
+        # prenorm and queries
 
         self.prenorm = nn.RMSNorm(dim) if prenorm else Identity()
 
@@ -80,9 +92,18 @@ class UltraMem(Module):
 
         self.core = Parameter(randn(core_heads, core_rank, core_rank) * 1e-2)
 
+        # handle value expansion
+
+        assert divisible_by(num_memories, value_expansion)
+
+        self.value_expansion_proj = Parameter(randn(value_expansion, dim_values, dim_values) * 1e-2)
+
+        batch_randperm = randn(num_memories // value_expansion, value_expansion).argsort(dim = -1)
+        self.register_buffer('rand_proj_mapping', batch_randperm.flatten())
+
         # memories
 
-        self.memories = nn.Embedding(num_memories, dim_values)
+        self.memories = Parameter(randn(num_memories, dim_values) * mem_init_value)
 
         # whether to have a projection from (head * dim_values) back to (dim)
 
@@ -171,7 +192,7 @@ class UltraMem(Module):
 
         # fetch the memories, and also handle sparse finetuning
 
-        memories = self.memories(final_indices)
+        memories = self.memories[final_indices]
 
         if exists(trainable_sparse_mask):
             assert len(trainable_sparse_mask) == self.num_memories
