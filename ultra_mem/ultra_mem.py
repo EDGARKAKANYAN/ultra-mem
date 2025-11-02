@@ -1,9 +1,9 @@
 from math import sqrt
 
 import torch
-from torch import tensor, randn
+from torch import nn, tensor, randn
 import torch.nn.functional as F
-from torch.nn import Linear, Sequential, Parameter, Module, ModuleList
+from torch.nn import Linear, Identity, Sequential, Parameter, Module, ModuleList
 
 from einx import add
 from einops import rearrange, repeat, reduce, einsum
@@ -33,10 +33,22 @@ class UltraMem(Module):
         core_heads = 2,                 # number of cores / heads
         core_aux_loss_margin = 0.15,
         aux_loss_weight = 0.1,
+        pre_query_causal_conv = True,
+        qk_layernorm = True,
+        prenorm = True
     ):
         super().__init__()
         assert sqrt(num_memories).is_integer()
         num_keys = int(sqrt(num_memories))
+
+        self.prenorm = nn.RMSNorm(dim) if prenorm else Identity()
+
+        self.pre_query_causal_conv = Sequential(
+            Rearrange('b n d -> b d n'),
+            nn.ZeroPad1d((2, 0)),
+            nn.Conv1d(dim, dim, 3, groups = dim),
+            Rearrange('b d n -> b n d')
+        ) if pre_query_causal_conv else Identity()
 
         self.to_queries = Linear(dim, dim_queries_keys, bias = False)
 
@@ -47,6 +59,9 @@ class UltraMem(Module):
 
         self.num_keys = num_keys
         self.topk = topk
+
+        self.query_ln = nn.LayerNorm(dim_queries_keys, bias = False) if qk_layernorm else Identity()
+        self.key_ln = nn.LayerNorm(dim_queries_keys, bias = False) if qk_layernorm else Identity()
 
         self.keys = Parameter(randn(2, core_rank, num_keys, dim_queries_keys) * 1e-2)
 
@@ -68,6 +83,8 @@ class UltraMem(Module):
         trainable_sparse_mask = None, # bool[num_memories,]
         return_aux_loss = None
     ):
+
+        tokens = self.prenorm(tokens)
 
         # svd
 
@@ -91,7 +108,15 @@ class UltraMem(Module):
 
         # queries keys
 
+        tokens = self.pre_query_causal_conv(tokens)
         queries = self.to_queries(tokens)
+
+        keys = self.keys
+
+        # query key layernorm for stability
+
+        queries = self.query_ln(queries)
+        keys = self.key_ln(keys)
 
         row_scores, col_scores = einsum(queries, self.keys, 'b n d, rc r m d -> rc b n m r')
 
@@ -120,6 +145,10 @@ class UltraMem(Module):
 
         final_scores, top_merged_score_indices = scores.topk(self.topk, dim = -1)
         final_indices = indices.gather(-1, top_merged_score_indices)
+
+        # they use non-competitive scores, corroborating Csordas et al. 2023
+
+        final_scores = final_scores.sigmoid()
 
         # returning
 
