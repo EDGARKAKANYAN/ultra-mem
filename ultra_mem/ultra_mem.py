@@ -5,7 +5,7 @@ from torch import nn, tensor, randn
 import torch.nn.functional as F
 from torch.nn import Linear, Identity, Sequential, Parameter, Module, ModuleList
 
-from einx import add
+from einx import add, multiply
 from einops import rearrange, repeat, reduce, einsum
 from einops.layers.torch import Rearrange
 
@@ -69,6 +69,10 @@ class UltraMem(Module):
         # learned e2e with an auxiliary loss
 
         self.core = Parameter(randn(core_heads, core_rank, core_rank) * 1e-2)
+
+        # memories
+
+        self.memories = nn.Embedding(num_memories, dim_values)
 
         # auxiliary loss on the core
 
@@ -149,6 +153,22 @@ class UltraMem(Module):
         # they use non-competitive scores, corroborating Csordas et al. 2023
 
         final_scores = final_scores.sigmoid()
+
+        # fetch the memories, and also handle sparse finetuning
+
+        memories = self.memories(final_indices)
+
+        if exists(trainable_sparse_mask):
+            assert len(trainable_sparse_mask) == self.num_memories
+
+            grad_mask = trainable_sparse_mask[final_indices]
+
+            masked_memories = grad_mask * memories
+            memories = memories.detach() + masked_memories - masked_memories.detach()
+
+        # multiply by the scores
+
+        memories_with_score = multiply('... m d, ... m', memories, final_scores)
 
         # returning
 
