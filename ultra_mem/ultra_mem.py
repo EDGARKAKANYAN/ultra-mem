@@ -1,9 +1,13 @@
-import torch
-from torch import tensor
-import torch.nn.functional as F
-from torch.nn import Parameter, Module, ModuleList
+from math import sqrt
 
-from einops import rearrange
+import torch
+from torch import tensor, randn
+import torch.nn.functional as F
+from torch.nn import Linear, Sequential, Parameter, Module, ModuleList
+
+from einx import add
+from einops import rearrange, repeat, reduce, einsum
+from einops.layers.torch import Rearrange
 
 # helper function
 
@@ -13,14 +17,6 @@ def exists(v):
 def default(v, d):
     return v if exists(v) else d
 
-# tensor helpers
-
-def log(t, eps = 1e-20):
-    return t.clamp_min(eps).log()
-
-def entropy(t):
-    prob = t.softmax(dim = -1)
-    return (-prob * log(prob)).mean(dim = -1)
 # classes
 
 class UltraMem(Module):
@@ -30,25 +26,38 @@ class UltraMem(Module):
         dim,
         dim_values,
         dim_out,
-        dim_queries_keys = 128, # think this is what PKM uses
-        core_rank = 2,          # the tucker decomposition core rank
-        core_heads = 2,         # number of cores / heads
+        num_memories = 1_000_000,
+        topk = 32,
+        dim_queries_keys = 128,         # think this is what PKM uses
+        core_rank = 2,                  # the tucker decomposition core rank
+        core_heads = 2,                 # number of cores / heads
         core_aux_loss_margin = 0.15,
         aux_loss_weight = 0.1,
-        aux_loss_use_spectral_entropy = False
     ):
         super().__init__()
+        assert sqrt(num_memories).is_integer()
+        num_keys = int(sqrt(num_memories))
+
+        self.to_queries = Linear(dim, dim_queries_keys, bias = False)
+
+        # memory related
+
+        self.heads = core_heads
+        self.rank = core_rank
+
+        self.num_keys = num_keys
+        self.topk = topk
+
+        self.keys = Parameter(randn(2, core_rank, num_keys, dim_queries_keys) * 1e-2)
 
         # their tucker decomposed core is 2x2
         # learned e2e with an auxiliary loss
 
-        self.core = Parameter(torch.randn(core_heads, core_rank, core_rank) * 1e-2)
+        self.core = Parameter(randn(core_heads, core_rank, core_rank) * 1e-2)
 
         # auxiliary loss on the core
 
         self.aux_loss_weight = aux_loss_weight
-
-        self.aux_loss_use_spectral_entropy = aux_loss_use_spectral_entropy # offer another method where the aux loss is the spectral entropy
         self.core_aux_loss_margin = core_aux_loss_margin
 
         self.register_buffer('zero', tensor(0.), persistent = False)
@@ -62,7 +71,10 @@ class UltraMem(Module):
 
         # svd
 
-        u, s, v = torch.svd(self.core)
+        u, s, t = torch.svd(self.core)
+
+        u_vec = u[..., 0]
+        t_vec = t[..., 0]
 
         # aux loss on singular values
 
@@ -71,14 +83,43 @@ class UltraMem(Module):
         aux_loss = self.zero
 
         if return_aux_loss:
-            if self.aux_loss_use_spectral_entropy:
-                aux_loss = entropy(s)
-            else:
-                non_first_singular_values = s[:, 1:]
+            non_first_singular_values = s[:, 1:]
 
-                aux_loss = F.relu(non_first_singular_values - self.core_aux_loss_margin).pow(2).mean(dim = -1) # eq (12)
+            aux_loss = F.relu(non_first_singular_values - self.core_aux_loss_margin).pow(2).mean(dim = -1) # eq (12)
 
             aux_loss = aux_loss.sum() * self.aux_loss_weight
+
+        # queries keys
+
+        queries = self.to_queries(tokens)
+
+        row_scores, col_scores = einsum(queries, self.keys, 'b n d, rc r m d -> rc b n m r')
+
+        # tucker decompsed qk retrieval, following fig 4
+
+        merged_row_scores = einsum(row_scores, u_vec, '... r, h r -> h ...')
+        merged_col_scores = einsum(col_scores, t_vec, '... r, h r -> h ...')
+
+        top_row_indices = merged_row_scores.topk(self.topk, dim = -1).indices
+        top_col_indices = merged_col_scores.topk(self.topk, dim = -1).indices
+
+        indices = add('... i, ... j -> ... (i j)', top_row_indices * self.num_keys, top_col_indices)
+
+        # ready for filtered row / col scores
+
+        top_row_indices, top_col_indices = tuple(repeat(t, '... -> ... r', r = self.rank) for t in (top_row_indices, top_col_indices))
+        row_scores, col_scores = tuple(repeat(t, '... -> h ...', h = self.heads) for t in (row_scores, col_scores))
+
+        filtered_row_scores = row_scores.gather(-2, top_row_indices)
+        filtered_col_score = col_scores.gather(-2, top_col_indices)
+
+        scores = einsum(filtered_row_scores, filtered_col_score, self.core, 'h ... i r1, h ... j r2, h r1 r2 -> h ... i j')
+        scores = rearrange(scores, '... i j -> ... (i j)')
+
+        # get final scores and memory indices - (head, batch, seq, sel mems)
+
+        final_scores, top_merged_score_indices = scores.topk(self.topk, dim = -1)
+        final_indices = indices.gather(-1, top_merged_score_indices)
 
         # returning
 
