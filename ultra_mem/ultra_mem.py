@@ -9,6 +9,15 @@ from einx import add, multiply
 from einops import rearrange, repeat, reduce, einsum
 from einops.layers.torch import Rearrange
 
+# einstein notation
+# b - batch
+# n - sequence
+# m - memories
+# d - feature dimension
+# i, j - row, col
+# h - heads
+# r - tucker decomposition rank
+
 # helper function
 
 def exists(v):
