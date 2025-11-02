@@ -17,3 +17,14 @@ Implementation of [UltraMem](https://arxiv.org/abs/2411.12364v1), improved Produ
     url     = {https://arxiv.org/abs/2411.12364}, 
 }
 ```
+
+```bibtex
+@inproceedings{anonymous2025continual,
+    title   = {Continual Learning via Sparse Memory Finetuning},
+    author  = {Anonymous},
+    booktitle = {Submitted to The Fourteenth International Conference on Learning Representations},
+    year    = {2025},
+    url     = {https://openreview.net/forum?id=LGo7U1m24L},
+    note    = {under review}
+}
+```
