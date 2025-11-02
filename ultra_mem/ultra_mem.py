@@ -18,6 +18,9 @@ def default(v, d):
 def log(t, eps = 1e-20):
     return t.clamp_min(eps).log()
 
+def entropy(t):
+    prob = t.softmax(dim = -1)
+    return (-prob * log(prob)).mean(dim = -1)
 # classes
 
 class UltraMem(Module):
@@ -32,6 +35,7 @@ class UltraMem(Module):
         core_heads = 2,         # number of cores / heads
         core_aux_loss_margin = 0.15,
         aux_loss_weight = 0.1,
+        aux_loss_use_spectral_entropy = False
     ):
         super().__init__()
 
@@ -42,8 +46,10 @@ class UltraMem(Module):
 
         # auxiliary loss on the core
 
-        self.core_aux_loss_margin = core_aux_loss_margin
         self.aux_loss_weight = aux_loss_weight
+
+        self.aux_loss_use_spectral_entropy = aux_loss_use_spectral_entropy # offer another method where the aux loss is the spectral entropy
+        self.core_aux_loss_margin = core_aux_loss_margin
 
         self.register_buffer('zero', tensor(0.), persistent = False)
 
@@ -65,10 +71,14 @@ class UltraMem(Module):
         aux_loss = self.zero
 
         if return_aux_loss:
-            non_first_singular_values = s[:, 1:]
+            if self.aux_loss_use_spectral_entropy:
+                aux_loss = entropy(s)
+            else:
+                non_first_singular_values = s[:, 1:]
 
-            aux_loss = F.relu(non_first_singular_values - self.core_aux_loss_margin).pow(2).mean() # eq (12)
-            aux_loss = aux_loss * self.aux_loss_weight
+                aux_loss = F.relu(non_first_singular_values - self.core_aux_loss_margin).pow(2).mean(dim = -1) # eq (12)
+
+            aux_loss = aux_loss.sum() * self.aux_loss_weight
 
         # returning
 
