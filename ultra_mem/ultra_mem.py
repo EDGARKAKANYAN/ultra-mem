@@ -44,7 +44,8 @@ class UltraMem(Module):
         aux_loss_weight = 0.1,
         pre_query_causal_conv = True,
         qk_layernorm = True,
-        prenorm = True
+        prenorm = True,
+        proj_out = None
     ):
         super().__init__()
         assert sqrt(num_memories).is_integer()
@@ -82,6 +83,11 @@ class UltraMem(Module):
         # memories
 
         self.memories = nn.Embedding(num_memories, dim_values)
+
+        # whether to have a projection from (head * dim_values) back to (dim)
+
+        proj_out = default(proj_out, core_heads * dim_values != dim)
+        self.combine_values_to_out = Linear(core_heads * dim_values, dim, bias = False) if proj_out else Identity()
 
         # auxiliary loss on the core
 
@@ -177,8 +183,14 @@ class UltraMem(Module):
 
         # multiply by the scores
 
-        memories_with_score = multiply('... m d, ... m', memories, final_scores)
+        aggregated = einsum(memories, final_scores, '... m d, ... m -> ... d')
+
+        # concat the MCS heads and maybe combine
+
+        concatted_heads = rearrange(aggregated, 'h b n d -> b n (h d)')
+
+        out = self.combine_values_to_out(concatted_heads)
 
         # returning
 
-        return tokens, aux_loss
+        return out, aux_loss
