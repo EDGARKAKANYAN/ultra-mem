@@ -23,6 +23,12 @@ tokens = torch.randn(1, 1024, 512)
 out, aux_loss = ultra_mem(tokens) # (1, 1024, 512), ()
 ```
 
+## Char-level LM
+
+```shell
+$ uv run train.py
+```
+
 ## Citations
 
 ```bibtex
