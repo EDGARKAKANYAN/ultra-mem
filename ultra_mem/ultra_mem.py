@@ -1,7 +1,7 @@
 from math import sqrt
 
 import torch
-from torch import nn, tensor, randn, arange
+from torch import nn, tensor, randn, arange, zeros
 import torch.nn.functional as F
 from torch.nn import Linear, Identity, Sequential, Parameter, Module, ModuleList
 
@@ -13,10 +13,11 @@ from einops.layers.torch import Rearrange
 # b - batch
 # n - sequence
 # m - memories
-# d - feature dimension
+# d, e - feature dimension (from / to)
 # i, j - row, col
 # h - heads
 # r - tucker decomposition rank
+# iv - implicit value expansion
 
 # helper function
 
@@ -122,10 +123,11 @@ class UltraMem(Module):
 
         assert divisible_by(num_memories, value_expansion)
 
+        self.value_expansion = value_expansion
         self.value_expansion_proj = Parameter(randn(value_expansion, dim_values, dim_values) * 1e-2)
 
         batch_randperm = randn(num_memories // value_expansion, value_expansion).argsort(dim = -1)
-        self.register_buffer('rand_proj_mapping', batch_randperm.flatten())
+        self.register_buffer('rand_proj_mapping', batch_randperm.flatten().long())
 
         # score activation - defaults to ReLU proposed by Csordas
 
@@ -133,7 +135,7 @@ class UltraMem(Module):
 
         # memories
 
-        self.memories = Parameter(randn(core_heads, num_memories, dim_values) * mem_init_std)
+        self.memories = Parameter(randn(core_heads, num_memories // value_expansion, dim_values) * mem_init_std)
 
         self.register_buffer('head_arange', arange(core_heads), persistent = False)
 
@@ -158,6 +160,10 @@ class UltraMem(Module):
 
     def reset_step_(self):
         self.step.zero_()
+
+    @property
+    def device(self):
+        return self.zero.device
 
     @property
     def mem_lr_scale(self):
@@ -247,8 +253,9 @@ class UltraMem(Module):
         # fetch the memories, and also handle sparse finetuning
 
         head_arange = align_dims_to(self.head_arange, final_indices)
+        memory_indices = final_indices // self.value_expansion
 
-        memories = self.memories[head_arange, final_indices]
+        memories = self.memories[head_arange, memory_indices]
 
         # change gradients to memories if needed
 
@@ -265,9 +272,22 @@ class UltraMem(Module):
             masked_memories = grad_mask * memories
             memories = memories.detach() + masked_memories - masked_memories.detach()
 
-        # multiply by the scores
+        # multiply by the scores and aggregate
 
-        aggregated = einsum(memories, final_scores, '... m d, ... m -> ... d')
+        if self.value_expansion > 1:
+            # handle the implicit value expansion
+            expert_indices = self.rand_proj_mapping[final_indices]
+            expert_indices = repeat(expert_indices, '... -> ... d', d = memories.shape[-1])
+
+            shape = list(expert_indices.shape)
+            shape[-2] = self.value_expansion
+
+            scaled_memories = multiply('... m d, ... m', memories, final_scores)
+
+            pooled_values = zeros(shape, device = self.device).scatter(-2, expert_indices, scaled_memories)
+            aggregated = einsum(pooled_values, self.value_expansion_proj, '... iv d, iv d e -> ... e')
+        else:
+            aggregated = einsum(memories, final_scores, '... m d, ... m -> ... d')
 
         # concat the MCS heads and maybe combine
 
