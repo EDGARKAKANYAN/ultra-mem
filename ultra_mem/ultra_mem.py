@@ -1,7 +1,7 @@
 from math import sqrt
 
 import torch
-from torch import nn, tensor, randn
+from torch import nn, tensor, randn, arange
 import torch.nn.functional as F
 from torch.nn import Linear, Identity, Sequential, Parameter, Module, ModuleList
 
@@ -32,6 +32,14 @@ def divisible_by(num, den):
 def is_odd(n):
     return not divisible_by(n, 2)
 
+def align_dims_to(t, target):
+    if t.ndim >= target.ndim:
+        return t
+
+    ones = (1,) * (target.ndim - t.ndim)
+    shape = t.shape
+    return t.reshape(*shape, *ones)
+
 def scale_gradient(t, scale = 1.):
     # scales the gradient, controlling effective lr upstream
 
@@ -57,6 +65,7 @@ class UltraMem(Module):
         core_heads = 2,                 # number of cores / heads
         core_aux_loss_margin = 0.15,
         aux_loss_weight = 0.1,
+        score_activation = nn.ReLU(),
         value_expansion = 4,
         pre_query_causal_conv = True,
         query_conv_kernel_size = 5,
@@ -118,9 +127,15 @@ class UltraMem(Module):
         batch_randperm = randn(num_memories // value_expansion, value_expansion).argsort(dim = -1)
         self.register_buffer('rand_proj_mapping', batch_randperm.flatten())
 
+        # score activation - defaults to ReLU proposed by Csordas
+
+        self.score_activation = score_activation
+
         # memories
 
-        self.memories = Parameter(randn(num_memories, dim_values) * mem_init_std)
+        self.memories = Parameter(randn(core_heads, num_memories, dim_values) * mem_init_std)
+
+        self.register_buffer('head_arange', arange(core_heads), persistent = False)
 
         # memories lr
 
@@ -227,11 +242,13 @@ class UltraMem(Module):
 
         # they use non-competitive scores, corroborating Csordas et al. 2023
 
-        final_scores = final_scores.sigmoid()
+        final_scores = self.score_activation(final_scores)
 
         # fetch the memories, and also handle sparse finetuning
 
-        memories = self.memories[final_indices]
+        head_arange = align_dims_to(self.head_arange, final_indices)
+
+        memories = self.memories[head_arange, final_indices]
 
         # change gradients to memories if needed
 
