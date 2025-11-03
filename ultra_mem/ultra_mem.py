@@ -140,7 +140,7 @@ class UltraMem(Module):
         mem_init_var = 1e-4
 
         if exists(layers_for_mem_init):
-            mem_init_var = self.value_expansion / (2 * self.topk * self.core_heads * layers_for_mem_init)
+            mem_init_var = value_expansion / (2 * topk * core_heads * layers_for_mem_init)
 
         self.memories = Parameter(randn(core_heads, num_memories // value_expansion, dim_values) * sqrt(mem_init_var))
 
