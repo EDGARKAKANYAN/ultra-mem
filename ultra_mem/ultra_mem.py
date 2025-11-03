@@ -190,7 +190,7 @@ class UltraMem(Module):
     def forward(
         self,
         tokens,
-        trainable_sparse_mask = None, # bool[num_memories,]
+        trainable_sparse_mask = None, # bool[heads, num_memories]
         return_aux_loss = None
     ):
 
