@@ -73,7 +73,8 @@ class UltraMem(Module):
         qk_layernorm = True,
         prenorm = True,
         proj_out = None,
-        mem_init_std = 1e-2,
+        layers_for_mem_init = None,       # the number of layers in the transformer, used for deriving the proposed variance for initializing the memories - memories will be init to 1e-2 std otherwise
+        mem_init_std = None,
         mem_lr_scale = 1e1,               # the values / memories needed 10x the learning rate (~1e-3 compared with ~1e-4 base lr, this could be controlled without doing param groups with a trick)
         mem_decay_lr_over_steps = 20_000  # decay the memory learning rate from 10x to 1x over this amount of training steps
     ):
@@ -136,7 +137,12 @@ class UltraMem(Module):
 
         # memories
 
-        self.memories = Parameter(randn(core_heads, num_memories // value_expansion, dim_values) * mem_init_std)
+        mem_init_var = 1e-4
+
+        if exists(layers_for_mem_init):
+            mem_init_var = self.value_expansion / (2 * self.topk * self.core_heads * layers_for_mem_init)
+
+        self.memories = Parameter(randn(core_heads, num_memories // value_expansion, dim_values) * sqrt(mem_init_var))
 
         self.register_buffer('head_arange', arange(core_heads), persistent = False)
 
@@ -149,8 +155,8 @@ class UltraMem(Module):
 
         # whether to have a projection from (head * dim_values) back to (dim)
 
-        proj_out = default(proj_out, core_heads * dim_values != dim)
-        self.combine_values_to_out = Linear(core_heads * dim_values, dim, bias = False) if proj_out else Identity()
+        proj_out = default(proj_out, core_heads * dim_values != dim_out)
+        self.combine_values_to_out = Linear(core_heads * dim_values, dim_out, bias = False) if proj_out else Identity()
 
         # auxiliary loss on the core
 

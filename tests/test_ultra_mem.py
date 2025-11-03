@@ -5,9 +5,11 @@ import torch
 
 @param('value_expansion', (1, 2))
 @param('core_heads', (1, 2))
+@param('layers_for_mem_init', (None, 12))
 def test_ultra_mem(
     value_expansion,
-    core_heads
+    core_heads,
+    layers_for_mem_init
 ):
     from ultra_mem.ultra_mem import UltraMem
 
@@ -15,10 +17,9 @@ def test_ultra_mem(
 
     ultra_mem = UltraMem(
         512,
-        dim_values = 64,
-        dim_out = 256,
         value_expansion = value_expansion,
-        core_heads = core_heads
+        core_heads = core_heads,
+        layers_for_mem_init = layers_for_mem_init
     )
 
     out, aux_loss = ultra_mem(x)
