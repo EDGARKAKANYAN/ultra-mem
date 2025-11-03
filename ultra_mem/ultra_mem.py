@@ -57,7 +57,7 @@ class UltraMem(Module):
     def __init__(
         self,
         dim,
-        dim_out,
+        dim_out = None,
         dim_values = None,
         num_memories = 1_000_000,
         topk = 32,
@@ -84,6 +84,7 @@ class UltraMem(Module):
         assert sqrt(num_memories).is_integer()
         num_keys = int(sqrt(num_memories))
 
+        dim_out = default(dim_out, dim)
         dim_values = default(dim_values, dim // core_heads)
 
         # prenorm and queries

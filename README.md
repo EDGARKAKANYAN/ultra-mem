@@ -1,8 +1,27 @@
 <img src="./fig4.png" width="400px"></img>
 
-## UltraMem (wip)
+## UltraMem
 
 Implementation of [UltraMem](https://arxiv.org/abs/2411.12364v1), improved Product Key Memory design, from Bytedance AI labs
+
+## Install
+
+```shell
+$ pip install ultra-mem
+```
+
+## Usage
+
+```python
+import torch
+from ultra_mem import UltraMem
+
+ultra_mem = UltraMem(dim = 512)
+
+tokens = torch.randn(1, 1024, 512)
+
+out, aux_loss = ultra_mem(tokens) # (1, 1024, 512), ()
+```
 
 ## Citations
 
