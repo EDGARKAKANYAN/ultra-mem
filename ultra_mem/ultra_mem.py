@@ -64,7 +64,8 @@ class UltraMem(Module):
         prenorm = True,
         proj_out = None,
         mem_init_std = 1e-2,
-        mem_lr_scale = 1e1               # the values / memories needed 10x the learning rate (~1e-3 compared with ~1e-4 base lr, this could be controlled without doing param groups with a trick)
+        mem_lr_scale = 1e1,               # the values / memories needed 10x the learning rate (~1e-3 compared with ~1e-4 base lr, this could be controlled without doing param groups with a trick)
+        mem_decay_lr_over_steps = 20_000  # decay the memory learning rate from 10x to 1x over this amount of training steps
     ):
         super().__init__()
 
@@ -123,7 +124,10 @@ class UltraMem(Module):
 
         # memories lr
 
-        self.mem_lr_scale = mem_lr_scale
+        self._mem_lr_scale = mem_lr_scale
+        self.mem_decay_lr_over_steps = mem_decay_lr_over_steps
+
+        self.register_buffer('step', tensor(0))
 
         # whether to have a projection from (head * dim_values) back to (dim)
 
@@ -136,6 +140,21 @@ class UltraMem(Module):
         self.core_aux_loss_margin = core_aux_loss_margin
 
         self.register_buffer('zero', tensor(0.), persistent = False)
+
+    def reset_step_(self):
+        self.step.zero_()
+
+    @property
+    def mem_lr_scale(self):
+
+        step = self.step.item()
+        init_lr, step_end_decay = self._mem_lr_scale, self.mem_decay_lr_over_steps
+
+        if step > step_end_decay:
+            return 1.
+
+        slope = (1. - init_lr) / (step_end_decay - step)
+        return init_lr + slope * step
 
     def forward(
         self,
@@ -216,7 +235,8 @@ class UltraMem(Module):
 
         # change gradients to memories if needed
 
-        memories = scale_gradient(memories, self.mem_lr_scale)
+        if self.training:
+            memories = scale_gradient(memories, self.mem_lr_scale)
 
         # sparse finetuning
 
@@ -237,6 +257,11 @@ class UltraMem(Module):
         concatted_heads = rearrange(aggregated, 'h b n d -> b n (h d)')
 
         out = self.combine_values_to_out(concatted_heads)
+
+        # increment step
+
+        if self.training:
+            self.step.add_(1)
 
         # returning
 
