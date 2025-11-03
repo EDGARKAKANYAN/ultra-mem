@@ -32,6 +32,15 @@ def divisible_by(num, den):
 def is_odd(n):
     return not divisible_by(n, 2)
 
+def scale_gradient(t, scale = 1.):
+    # scales the gradient, controlling effective lr upstream
+
+    if scale == 1.:
+        return t
+
+    scaled_t = t * scale
+    return t.detach() - scaled_t + scaled_t.detach()
+
 # classes
 
 class UltraMem(Module):
@@ -54,7 +63,8 @@ class UltraMem(Module):
         qk_layernorm = True,
         prenorm = True,
         proj_out = None,
-        mem_init_value = 1e-2
+        mem_init_std = 1e-2,
+        mem_lr_scale = 1e1               # the values / memories needed 10x the learning rate (~1e-3 compared with ~1e-4 base lr, this could be controlled without doing param groups with a trick)
     ):
         super().__init__()
 
@@ -109,7 +119,11 @@ class UltraMem(Module):
 
         # memories
 
-        self.memories = Parameter(randn(num_memories, dim_values) * mem_init_value)
+        self.memories = Parameter(randn(num_memories, dim_values) * mem_init_std)
+
+        # memories lr
+
+        self.mem_lr_scale = mem_lr_scale
 
         # whether to have a projection from (head * dim_values) back to (dim)
 
@@ -199,6 +213,12 @@ class UltraMem(Module):
         # fetch the memories, and also handle sparse finetuning
 
         memories = self.memories[final_indices]
+
+        # change gradients to memories if needed
+
+        memories = scale_gradient(memories, self.mem_lr_scale)
+
+        # sparse finetuning
 
         if exists(trainable_sparse_mask):
             assert len(trainable_sparse_mask) == self.num_memories
