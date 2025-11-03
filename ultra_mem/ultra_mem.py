@@ -29,6 +29,9 @@ def default(v, d):
 def divisible_by(num, den):
     return (num % den) == 0
 
+def is_odd(n):
+    return not divisible_by(n, 2)
+
 # classes
 
 class UltraMem(Module):
@@ -47,6 +50,7 @@ class UltraMem(Module):
         aux_loss_weight = 0.1,
         value_expansion = 4,
         pre_query_causal_conv = True,
+        query_conv_kernel_size = 5,
         qk_layernorm = True,
         prenorm = True,
         proj_out = None,
@@ -65,10 +69,12 @@ class UltraMem(Module):
 
         self.prenorm = nn.RMSNorm(dim) if prenorm else Identity()
 
+        assert is_odd(query_conv_kernel_size)
+
         self.pre_query_causal_conv = Sequential(
             Rearrange('b n d -> b d n'),
-            nn.ZeroPad1d((2, 0)),
-            nn.Conv1d(dim, dim, 3, groups = dim),
+            nn.ZeroPad1d((query_conv_kernel_size - 1, 0)),
+            nn.Conv1d(dim, dim, query_conv_kernel_size, groups = dim),
             Rearrange('b d n -> b n d')
         ) if pre_query_causal_conv else Identity()
 
