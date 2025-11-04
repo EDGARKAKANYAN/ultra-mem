@@ -8,12 +8,14 @@ from torch import nn
 @param('value_expansion', (1, 2))
 @param('core_heads', (1, 2))
 @param('layers_for_mem_init', (None, 12))
+@param('gate_values_with_input', (False, True))
 @param('score_activation', (nn.Identity(), nn.ReLU()))
 def test_ultra_mem(
     sparse_finetune,
     value_expansion,
     core_heads,
     layers_for_mem_init,
+    gate_values_with_input,
     score_activation,
 ):
     from ultra_mem.ultra_mem import UltraMem
@@ -23,7 +25,8 @@ def test_ultra_mem(
         value_expansion = value_expansion,
         core_heads = core_heads,
         layers_for_mem_init = layers_for_mem_init,
-        score_activation = score_activation
+        score_activation = score_activation,
+        gate_values_with_input = gate_values_with_input
     )
 
     tokens = torch.randn(1, 1024, 512)

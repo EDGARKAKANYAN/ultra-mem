@@ -73,6 +73,7 @@ class UltraMem(Module):
         qk_layernorm = True,
         prenorm = True,
         proj_out = None,
+        gate_values_with_input = None,    # the silu gating mentioned by Jessy Lin in his continual learning blog post (values * silu(input))
         layers_for_mem_init = None,       # the number of layers in the transformer, used for deriving the proposed variance for initializing the memories - memories will be init to 1e-2 std otherwise
         mem_init_std = None,
         mem_lr_scale = 1e1,               # the values / memories needed 10x the learning rate (~1e-3 compared with ~1e-4 base lr, this could be controlled without doing param groups with a trick)
@@ -158,8 +159,19 @@ class UltraMem(Module):
 
         # whether to have a projection from (head * dim_values) back to (dim)
 
-        proj_out = default(proj_out, core_heads * dim_values != dim_out)
-        self.combine_values_to_out = Linear(core_heads * dim_values, dim_out, bias = False) if proj_out else Identity()
+        dim_mem_output = core_heads * dim_values
+        dimension_differ = dim_mem_output != dim_out
+
+        proj_out = default(proj_out, dimension_differ or gate_values_with_input)
+
+        self.combine_values_to_out = Linear(dim_mem_output, dim_out, bias = False) if proj_out else Identity()
+
+        # maybe gate weighted summed memories by input
+
+        self.mem_output_gates = nn.Sequential(
+            Linear(dim, dim_mem_output),
+            nn.SiLU()
+        ) if gate_values_with_input else None
 
         # auxiliary loss on the core
 
@@ -218,8 +230,8 @@ class UltraMem(Module):
 
         # queries keys
 
-        tokens = self.pre_query_causal_conv(tokens)
-        queries = self.to_queries(tokens)
+        tokens_for_query = self.pre_query_causal_conv(tokens)
+        queries = self.to_queries(tokens_for_query)
 
         keys = self.keys
 
@@ -306,6 +318,13 @@ class UltraMem(Module):
         # concat the MCS heads and maybe combine
 
         concatted_heads = rearrange(aggregated, 'h b n d -> b n (h d)')
+
+        # maybe input gating
+
+        if exists(self.mem_output_gates):
+            concatted_heads = concatted_heads * self.mem_output_gates(tokens)
+
+        # combine
 
         out = self.combine_values_to_out(concatted_heads)
 

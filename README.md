@@ -48,12 +48,10 @@ $ uv run train.py
 ```
 
 ```bibtex
-@inproceedings{anonymous2025continual,
+@inproceedings{Lin2025ContinualLV,
     title   = {Continual Learning via Sparse Memory Finetuning},
-    author  = {Anonymous},
-    booktitle = {Submitted to The Fourteenth International Conference on Learning Representations},
+    author  = {Jessy Lin and Luke S. Zettlemoyer and Gargi Ghosh and Wen-tau Yih and Aram H. Markosyan and Vincent-Pierre Berges and Barlas Ouguz},
     year    = {2025},
-    url     = {https://openreview.net/forum?id=LGo7U1m24L},
-    note    = {under review}
+    url     = {https://api.semanticscholar.org/CorpusID:282203348}
 }
 ```
